@@ -30,7 +30,7 @@
   <script>
     async function sha256(str) {
       const encoder = new TextEncoder();
-      const data = encoder.encode(str.trim());
+      const data = encoder.encode(str.trim().toLowerCase());  // 强制小写 + 去空格
       const hashBuffer = await crypto.subtle.digest("SHA-256", data);
       const hashArray = Array.from(new Uint8Array(hashBuffer));
       return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
