@@ -2,35 +2,126 @@
 <html lang="zh">
 <head>
   <meta charset="UTF-8">
-  <title>Composable 资格批量查询</title>
+  <title>Espresso 白名单 批量查询</title>
   <style>
-    body { font-family: "Segoe UI", sans-serif; max-width: 800px; margin: 40px auto; background: #f9f9f9; padding: 20px; }
-    textarea { width: 100%; height: 200px; padding: 10px; font-size: 14px; margin-bottom: 10px; }
-    button { padding: 10px 20px; font-size: 16px; cursor: pointer; }
-    table { width: 100%; border-collapse: collapse; margin-top: 20px; background: white; }
-    th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
-    .yes { color: green; font-weight: bold; }
-    .no { color: red; }
+    body {
+      font-family: "Segoe UI", "PingFang SC", sans-serif;
+      max-width: 1000px;
+      margin: 40px auto;
+      background: #f9f9f9;
+      padding: 20px;
+      color: #333;
+    }
+    h2 {
+      text-align: center;
+      color: #111;
+    }
+    textarea {
+      width: 100%;
+      height: 180px;
+      padding: 12px;
+      font-size: 14px;
+      margin-bottom: 12px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      resize: vertical;
+    }
+    button {
+      padding: 10px 24px;
+      font-size: 16px;
+      background-color: #0078d4;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      margin: 10px;
+      transition: background-color 0.2s;
+    }
+    button:hover {
+      background-color: #005fa3;
+    }
+    .summary {
+      margin-top: 10px;
+      font-size: 15px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+      background: white;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 8px;
+      text-align: center;
+      font-size: 14px;
+    }
+    th {
+      background-color: #f2f2f2;
+    }
+    .yes {
+      color: green;
+      font-weight: bold;
+    }
+    .no {
+      color: red;
+    }
+    .json-box {
+      font-size: 12px;
+      text-align: left;
+      max-height: 160px;
+      overflow-y: auto;
+      background: #f7f7f7;
+      border: 1px dashed #ccc;
+      padding: 8px;
+      white-space: pre-wrap;
+    }
+    .footer {
+      text-align: center;
+      margin-top: 30px;
+      font-size: 14px;
+      color: #666;
+    }
+    .footer a {
+      color: #0078d4;
+      text-decoration: none;
+    }
+    .footer a:hover {
+      text-decoration: underline;
+    }
   </style>
 </head>
 <body>
-  <h2>Composable Allowlist 批量查询工具</h2>
+  <h2>Espresso 白名单 批量查询</h2>
   <p>请输入钱包地址（每行一个）：</p>
-  <textarea id="addresses"></textarea>
-  <div style="text-align:center">
+  <textarea id="addresses" placeholder="每行输入一个钱包地址，支持 0x 开头"></textarea>
+  <div style="text-align:center;">
     <button onclick="startCheck()">开始查询</button>
+    <a href="https://composables.espresso.foundation/" target="_blank">
+      <button style="background:#444;">官方查询传送门</button>
+    </a>
   </div>
+
+  <div class="summary" id="summaryBox" style="display:none;">
+    ✅ 查询地址数：<span id="totalCount">0</span>
+    ｜✅ 有资格地址数：<span id="qualifiedCount">0</span>
+  </div>
+
   <table id="resultTable" style="display:none;">
     <thead>
-      <tr><th>#</th><th>地址</th><th>结果</th></tr>
+      <tr><th>#</th><th>地址</th><th>资格</th><th>完整响应</th></tr>
     </thead>
     <tbody></tbody>
   </table>
 
+  <div class="footer">
+    作者推特：<a href="https://x.com/0xXIAOc" target="_blank">@0xXIAOc</a>
+  </div>
+
   <script>
     async function sha256(str) {
       const encoder = new TextEncoder();
-      const data = encoder.encode(str.trim().toLowerCase());  // 强制小写 + 去空格
+      const data = encoder.encode(str.trim().toLowerCase());
       const hashBuffer = await crypto.subtle.digest("SHA-256", data);
       const hashArray = Array.from(new Uint8Array(hashBuffer));
       return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
@@ -41,11 +132,14 @@
       const url = `/api/proxy?hash=${hash}`;
       try {
         const res = await fetch(url);
-        if (!res.ok) return false;
+        if (!res.ok) return { phase: null, raw: '请求失败' };
         const text = await res.text();
-        return text.includes('"phase":"phase2"');
+        return {
+          phase: text.includes('"phase":"phase2"') ? "phase2" : "其他/无资格",
+          raw: text
+        };
       } catch (e) {
-        return false;
+        return { phase: null, raw: '请求异常' };
       }
     }
 
@@ -54,18 +148,35 @@
       const list = textarea.value.trim().split("\n").map(a => a.trim()).filter(a => a);
       const table = document.getElementById("resultTable");
       const tbody = table.querySelector("tbody");
+      const summary = document.getElementById("summaryBox");
+      const totalBox = document.getElementById("totalCount");
+      const passBox = document.getElementById("qualifiedCount");
+
       tbody.innerHTML = '';
       table.style.display = 'table';
+      summary.style.display = 'block';
+
+      let qualified = 0;
 
       for (let i = 0; i < list.length; i++) {
         const address = list[i];
         const row = document.createElement("tr");
-        row.innerHTML = `<td>${i + 1}</td><td>${address}</td><td>查询中...</td>`;
+        row.innerHTML = `<td>${i + 1}</td><td>${address}</td><td>查询中...</td><td>加载中...</td>`;
         tbody.appendChild(row);
 
-        const has = await checkAddress(address);
-        row.cells[2].innerHTML = has ? '<span class="yes">✅ 有资格</span>' : '<span class="no">❌ 无资格</span>';
+        const result = await checkAddress(address);
+        const phase = result.phase;
+        const raw = result.raw;
+
+        const isQualified = phase === "phase2";
+        if (isQualified) qualified++;
+
+        row.cells[2].innerHTML = isQualified ? '<span class="yes">✅ 有资格</span>' : '<span class="no">❌ 无资格</span>';
+        row.cells[3].innerHTML = `<div class="json-box">${raw}</div>`;
       }
+
+      totalBox.textContent = list.length;
+      passBox.textContent = qualified;
     }
   </script>
 </body>
