@@ -1,18 +1,16 @@
 export default async function handler(req, res) {
   const { hash } = req.query;
-
   if (!hash) {
-    return res.status(400).send("Missing hash parameter");
+    return res.status(400).json({ error: "Missing hash" });
   }
 
-  const targetUrl = `https://composables.espresso.foundation/api/check-hash/${hash}`;
-
   try {
-    const response = await fetch(targetUrl);
-    const data = await response.text();
+    const response = await fetch(`https://composables.espresso.foundation/api/check-hash/${hash}`);
+    const data = await response.text(); // 返回是 text/plain
     res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Content-Type", "text/plain");
     res.status(200).send(data);
-  } catch (error) {
-    res.status(500).send("Proxy fetch failed");
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch from upstream", details: err.message });
   }
 }
