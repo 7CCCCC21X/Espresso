@@ -1,87 +1,70 @@
 <!DOCTYPE html>
 <html lang="zh">
 <head>
-  <meta charset="UTF-8" />
-  <title>Composables 批量白名单查询</title>
-  <script src="https://cdn.jsdelivr.net/npm/ethers@6.7.0/dist/ethers.umd.min.js"></script>
+  <meta charset="UTF-8">
+  <title>Composable 资格批量查询</title>
   <style>
-    body {
-      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-      background: #f2f2f2;
-      padding: 20px;
-      max-width: 900px;
-      margin: auto;
-    }
-    h2 { text-align: center; }
-    textarea {
-      width: 100%;
-      height: 180px;
-      font-size: 14px;
-      padding: 10px;
-      margin-top: 10px;
-    }
-    button {
-      margin-top: 10px;
-      padding: 10px 20px;
-      font-size: 16px;
-      background-color: #4CAF50;
-      color: white;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-    }
-    button:hover { background-color: #45a049; }
-    table {
-      margin-top: 20px;
-      width: 100%;
-      border-collapse: collapse;
-      background: white;
-    }
-    th, td {
-      padding: 8px;
-      border: 1px solid #ccc;
-      text-align: center;
-    }
+    body { font-family: "Segoe UI", sans-serif; max-width: 800px; margin: 40px auto; background: #f9f9f9; padding: 20px; }
+    textarea { width: 100%; height: 200px; padding: 10px; font-size: 14px; margin-bottom: 10px; }
+    button { padding: 10px 20px; font-size: 16px; cursor: pointer; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; background: white; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
     .yes { color: green; font-weight: bold; }
-    .no { color: red; font-weight: bold; }
+    .no { color: red; }
   </style>
 </head>
 <body>
-  <h2>Composables 批量白名单查询</h2>
-  <textarea id="input" placeholder="每行输入一个地址，例如：0xabc123..."></textarea>
-  <button onclick="checkAll()">开始查询</button>
-  <table id="resultTable">
+  <h2>Composable Allowlist 批量查询工具</h2>
+  <p>请输入钱包地址（每行一个）：</p>
+  <textarea id="addresses"></textarea>
+  <div style="text-align:center">
+    <button onclick="startCheck()">开始查询</button>
+  </div>
+  <table id="resultTable" style="display:none;">
     <thead>
-      <tr>
-        <th>编号</th>
-        <th>地址</th>
-        <th>状态</th>
-      </tr>
+      <tr><th>#</th><th>地址</th><th>结果</th></tr>
     </thead>
-    <tbody id="resultBody"></tbody>
+    <tbody></tbody>
   </table>
 
   <script>
-    async function checkAll() {
-      const input = document.getElementById("input").value.trim();
-      const addresses = input.split("\n").map(addr => addr.trim()).filter(a => a);
-      const tbody = document.getElementById("resultBody");
-      tbody.innerHTML = "";
+    async function sha256(str) {
+      const encoder = new TextEncoder();
+      const data = encoder.encode(str.trim());
+      const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    }
 
-      for (let i = 0; i < addresses.length; i++) {
-        const address = addresses[i];
+    async function checkAddress(address) {
+      const hash = await sha256(address);
+      const url = `/api/proxy?hash=${hash}`;
+      try {
+        const res = await fetch(url);
+        if (!res.ok) return false;
+        const text = await res.text();
+        return text.includes('"phase":"phase2"');
+      } catch (e) {
+        return false;
+      }
+    }
+
+    async function startCheck() {
+      const textarea = document.getElementById("addresses");
+      const list = textarea.value.trim().split("\n").map(a => a.trim()).filter(a => a);
+      const table = document.getElementById("resultTable");
+      const tbody = table.querySelector("tbody");
+      tbody.innerHTML = '';
+      table.style.display = 'table';
+
+      for (let i = 0; i < list.length; i++) {
+        const address = list[i];
         const row = document.createElement("tr");
         row.innerHTML = `<td>${i + 1}</td><td>${address}</td><td>查询中...</td>`;
         tbody.appendChild(row);
 
-        try {
-          const hash = ethers.keccak256(ethers.toUtf8Bytes(address));
-          const resp = await fetch(`/api/proxy?hash=${hash}`);
-          const text = await resp.text();
-          row.cells[2].innerHTML = (text && text !== "0") ? `<span class="yes">✅ 在白名单</span>` : `<span class="no">❌ 不在</span>`;
-        } catch (e) {
-          row.cells[2].innerHTML = `<span class="no">❌ 查询失败</span>`;
-        }
+        const has = await checkAddress(address);
+        row.cells[2].innerHTML = has ? '<span class="yes">✅ 有资格</span>' : '<span class="no">❌ 无资格</span>';
       }
     }
   </script>
